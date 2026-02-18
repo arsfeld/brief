@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 9%;
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 45%;
+    --border: 0 0% 90%;
+    --accent: 0 0% 96%;
+    --accent-foreground: 0 0% 9%;
+    --sidebar: 0 0% 98%;
+    --sidebar-border: 0 0% 90%;
+    --primary: 142 76% 36%;
+    --primary-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 0 0% 9%;
+    --foreground: 0 0% 96%;
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 55%;
+    --border: 0 0% 20%;
+    --accent: 0 0% 15%;
+    --accent-foreground: 0 0% 96%;
+    --sidebar: 0 0% 11%;
+    --sidebar-border: 0 0% 18%;
+    --primary: 142 76% 45%;
+    --primary-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+  }
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+    border-color: hsl(var(--border));
+  }
+
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  /* Allow text selection only in editor areas */
+  .selectable {
+    user-select: text;
+  }
+}
+
+/* macOS traffic light spacing */
+.titlebar-drag {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.titlebar-no-drag {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}

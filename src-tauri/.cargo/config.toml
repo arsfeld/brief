@@ -1,0 +1,8 @@
+[target.aarch64-apple-darwin]
+# Ad-hoc codesign the dev binary with a stable identifier and screen-recording
+# entitlement before each run, so macOS TCC persists the permission across rebuilds.
+runner = [
+    "sh", "-c",
+    "codesign --force --sign - --identifier com.arosenfeld.brief --entitlements /Users/arosenfeld/Code/brief/src-tauri/entitlements.plist \"$1\" 2>/dev/null; exec \"$@\"",
+    "--"
+]
