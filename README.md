@@ -2,27 +2,43 @@
 
 # Brief
 
-A local-first, AI-powered meeting notes app. Take raw notes during meetings, then let AI turn them into structured, actionable records — all without accounts or cloud lock-in.
+A local-first, AI-powered meeting notes app. Take raw notes during meetings, then let AI turn them into structured, actionable records.
 
 Built with Tauri v2 (Rust) + React 19 (TypeScript).
 
-## Features
+## What works
 
-- **Distraction-free editor** — minimal UI that stays out of your way
-- **AI enhancement** — polish, summarize, extract action items, surface decisions
-- **Local-first storage** — notes live as plain Markdown files in `~/Brief/`; readable without the app
-- **Multiple AI providers** — local Llama (via llama-server), OpenAI, or Anthropic — bring your own key
-- **No account required** — works fully offline with a local model
+- **Note editor** — title + content textarea with 800ms auto-save
+- **Sidebar** — lists all notes sorted by last modified, with delete
+- **AI enhancement** — four modes: Polish, Summarize, Action items, Decisions (requires a local [llama-server](https://github.com/ggml-org/llama.cpp) running at `localhost:8080`)
+- **Audio recording + transcription** — record mic + system audio, transcribe via Whisper; model (~148 MB) is downloaded on first use
 
-## Getting Started
+## What's not yet implemented
+
+- UI for selecting AI provider or entering API keys (OpenAI/Anthropic backends exist but are unreachable from the UI)
+- Editing participants and tags
+- Settings screen
+
+## Storage
+
+Notes are stored as plain files in `~/Brief/`:
+
+```
+~/Brief/
+  2026-02-18-abc12.md         ← note content (Markdown)
+  2026-02-18-abc12.meta.json  ← title, participants, tags, timestamps
+```
+
+## Getting started
 
 ### Prerequisites
 
 - [Rust](https://rustup.rs/)
 - [Node.js](https://nodejs.org/) + [pnpm](https://pnpm.io/)
-- [Tauri CLI prerequisites](https://tauri.app/start/prerequisites/) for your platform
+- [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your platform
+- A local llama-server on `localhost:8080` if you want AI enhancement
 
-### Install & Run
+### Run
 
 ```bash
 pnpm install
@@ -35,42 +51,11 @@ pnpm tauri dev
 pnpm tauri build
 ```
 
-## Storage Format
-
-Notes are stored in `~/Brief/` as plain Markdown with JSON sidecar files:
-
-```
-~/Brief/
-  2026-02-18-product-kickoff.md         ← note content
-  2026-02-18-product-kickoff.meta.json  ← title, participants, tags, timestamps
-```
-
-## AI Providers
-
-Configure your preferred provider in the toolbar:
-
-| Provider | Setup |
-|---|---|
-| **Local** (default) | Runs `llama-server` at `localhost:8080` |
-| **OpenAI** | Set `OPENAI_API_KEY` |
-| **Anthropic** | Set `ANTHROPIC_API_KEY` |
-
-## Tech Stack
-
-```
-App shell:   Tauri v2 (Rust core, WebView frontend)
-Frontend:    React 19 + TypeScript + Vite + Tailwind CSS
-Local AI:    llama.cpp (llama-server)
-Cloud AI:    OpenAI / Anthropic (optional, BYOK)
-Storage:     Markdown + JSON via Tauri FS plugin
-```
-
 ## Development
 
 ```bash
-pnpm dev          # Frontend only (Vite, port 1420)
-pnpm build        # Type-check + build frontend
-pnpm tauri dev    # Full app with hot reload
+pnpm dev    # frontend only (Vite, port 1420)
+pnpm build  # type-check + build frontend
 ```
 
 TypeScript strict mode (`noUnusedLocals`, `noUnusedParameters`) is the quality gate — `pnpm build` must pass cleanly.
