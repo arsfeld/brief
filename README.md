@@ -1,3 +1,5 @@
+> ⚠️ **Experimental / Vibe-coded** — This project is a work in progress built through AI-assisted exploration. Expect rough edges, incomplete features, and breaking changes.
+
 # Brief
 
 A local-first, AI-powered meeting notes app. Take raw notes during meetings, then let AI turn them into structured, actionable records — all without accounts or cloud lock-in.
