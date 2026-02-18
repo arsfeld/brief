@@ -34,11 +34,11 @@ impl Default for RecordingState {
 
 // ── Whisper state ────────────────────────────────────────────────────────────
 
-pub struct WhisperState(Mutex<Option<WhisperContext>>);
+pub struct WhisperState(pub Arc<Mutex<Option<WhisperContext>>>);
 
 impl Default for WhisperState {
     fn default() -> Self {
-        WhisperState(Mutex::new(None))
+        WhisperState(Arc::new(Mutex::new(None)))
     }
 }
 
@@ -334,89 +334,100 @@ pub fn stop_recording(state: tauri::State<RecordingState>) -> Result<String, Str
 }
 
 #[tauri::command]
-pub fn stop_and_transcribe(
-    recording: tauri::State<RecordingState>,
-    whisper: tauri::State<WhisperState>,
+pub async fn stop_and_transcribe(
+    recording: tauri::State<'_, RecordingState>,
+    whisper: tauri::State<'_, WhisperState>,
 ) -> Result<String, String> {
+    // Collect samples synchronously (fast, needs tauri::State access)
     let (mic_i16, mic_rate, sys_mono) = collect_samples(&recording)?;
 
     if mic_i16.is_empty() && sys_mono.is_empty() {
         return Ok(String::new());
     }
 
-    // Write temp WAV of mic audio (useful for debugging; deleted after transcription)
-    let wav_path = if !mic_i16.is_empty() {
-        Some(write_wav(&mic_i16, mic_rate)?)
-    } else {
-        None
-    };
+    // Clone the Arc so we can move it into the blocking task
+    let whisper_ctx = whisper.0.clone();
 
-    // Resample mic i16 @ mic_rate → 16 kHz f32
-    let mic_f32 = resample_to_16k(&mic_i16, mic_rate);
+    // Move all CPU-intensive work (resampling + Whisper inference) off the main thread
+    let transcript = tokio::task::spawn_blocking(move || {
+        // Write temp WAV of mic audio (useful for debugging; deleted after transcription)
+        let wav_path = if !mic_i16.is_empty() {
+            Some(write_wav(&mic_i16, mic_rate)?)
+        } else {
+            None
+        };
 
-    // Resample system audio f32 @ 48 kHz → 16 kHz f32
-    let sys_f32 = resample_f32_to_16k(&sys_mono, 48000);
+        // Resample mic i16 @ mic_rate → 16 kHz f32
+        let mic_f32 = resample_to_16k(&mic_i16, mic_rate);
 
-    // Mix: average both streams, padding the shorter one with silence
-    let audio_f32: Vec<f32> = if sys_f32.is_empty() {
-        mic_f32
-    } else if mic_f32.is_empty() {
-        sys_f32
-    } else {
-        let len = mic_f32.len().max(sys_f32.len());
-        (0..len)
-            .map(|i| {
-                let m = mic_f32.get(i).copied().unwrap_or(0.0);
-                let s = sys_f32.get(i).copied().unwrap_or(0.0);
-                ((m + s) / 2.0).clamp(-1.0, 1.0)
-            })
-            .collect()
-    };
+        // Resample system audio f32 @ 48 kHz → 16 kHz f32
+        let sys_f32 = resample_f32_to_16k(&sys_mono, 48000);
 
-    // Load the model if not already cached
-    let model = model_path();
-    if !model.exists() {
-        return Err("Whisper model not found. Please download it first.".into());
-    }
+        // Mix: average both streams, padding the shorter one with silence
+        let audio_f32: Vec<f32> = if sys_f32.is_empty() {
+            mic_f32
+        } else if mic_f32.is_empty() {
+            sys_f32
+        } else {
+            let len = mic_f32.len().max(sys_f32.len());
+            (0..len)
+                .map(|i| {
+                    let m = mic_f32.get(i).copied().unwrap_or(0.0);
+                    let s = sys_f32.get(i).copied().unwrap_or(0.0);
+                    ((m + s) / 2.0).clamp(-1.0, 1.0)
+                })
+                .collect()
+        };
 
-    let mut ctx_guard = whisper.0.lock().map_err(|e| e.to_string())?;
-    if ctx_guard.is_none() {
-        let ctx = WhisperContext::new_with_params(
-            model.to_str().ok_or("Invalid model path")?,
-            WhisperContextParameters::default(),
-        )
-        .map_err(|e| e.to_string())?;
-        *ctx_guard = Some(ctx);
-    }
-    let ctx = ctx_guard.as_ref().unwrap();
+        // Load the model if not already cached
+        let model = model_path();
+        if !model.exists() {
+            return Err("Whisper model not found. Please download it first.".to_string());
+        }
 
-    // Run transcription
-    let mut wstate = ctx.create_state().map_err(|e| e.to_string())?;
-    let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 0 });
-    params.set_language(Some("en"));
-    params.set_print_special(false);
-    params.set_print_progress(false);
-    params.set_print_realtime(false);
-    params.set_print_timestamps(false);
-
-    wstate.full(params, &audio_f32).map_err(|e| e.to_string())?;
-
-    let n = wstate.full_n_segments().map_err(|e| e.to_string())?;
-    let mut transcript = String::new();
-    for i in 0..n {
-        let text = wstate
-            .full_get_segment_text(i)
+        let mut ctx_guard = whisper_ctx.lock().map_err(|e| e.to_string())?;
+        if ctx_guard.is_none() {
+            let ctx = WhisperContext::new_with_params(
+                model.to_str().ok_or("Invalid model path")?,
+                WhisperContextParameters::default(),
+            )
             .map_err(|e| e.to_string())?;
-        transcript.push_str(text.trim());
-        transcript.push(' ');
-    }
+            *ctx_guard = Some(ctx);
+        }
+        let ctx = ctx_guard.as_ref().unwrap();
 
-    // Clean up temp WAV
-    if let Some(path) = wav_path {
-        let _ = std::fs::remove_file(&path);
-    }
+        // Run transcription
+        let mut wstate = ctx.create_state().map_err(|e| e.to_string())?;
+        let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 0 });
+        params.set_language(Some("en"));
+        params.set_print_special(false);
+        params.set_print_progress(false);
+        params.set_print_realtime(false);
+        params.set_print_timestamps(false);
 
-    Ok(transcript.trim().to_string())
+        wstate.full(params, &audio_f32).map_err(|e| e.to_string())?;
+
+        let n = wstate.full_n_segments().map_err(|e| e.to_string())?;
+        let mut transcript = String::new();
+        for i in 0..n {
+            let text = wstate
+                .full_get_segment_text(i)
+                .map_err(|e| e.to_string())?;
+            transcript.push_str(text.trim());
+            transcript.push(' ');
+        }
+
+        // Clean up temp WAV
+        if let Some(path) = wav_path {
+            let _ = std::fs::remove_file(&path);
+        }
+
+        Ok(transcript.trim().to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    Ok(transcript)
 }
 
 #[tauri::command]
